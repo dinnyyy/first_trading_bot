@@ -1,0 +1,98 @@
+=== HMM Model Statistics ===
+Saved at: 2025-05-11 00:29:35
+
+=== Model Configuration ===
+Number of states: 7
+Features used: volatility, fisher_rsi, adx, volume_zscore
+Training periods: 18384
+OOS periods: 7880
+
+=== State Distributions ===
+                    State  Train Count   Train %  OOS Count     OOS %
+0        Bullish Trending         2415  0.131364       1048  0.132995
+1        Bearish Trending         2406  0.130875       1258  0.159645
+2  Sideways Consolidation         2944  0.160139        959  0.121701
+3    Upward Consolidation         2787  0.151599        875  0.111041
+4  Downward Consolidation         1588  0.086379        788  0.100000
+5   Downward Capitulation         3657  0.198923       1844  0.234010
+6     Upward Capitulation         2587  0.140720       1108  0.140609
+
+=== Transition Matrix ===
+                             To Bullish Trending  To Bearish Trending  To Sideways Consolidation  To Upward Consolidation  To Downward Consolidation  To Downward Capitulation  To Upward Capitulation
+From Bullish Trending                      0.903                0.026                      0.000                    0.001                      0.005                     0.061                   0.004
+From Bearish Trending                      0.015                0.930                      0.000                    0.001                      0.009                     0.031                   0.014
+From Sideways Consolidation                0.024                0.000                      0.904                    0.041                      0.000                     0.010                   0.020
+From Upward Consolidation                  0.007                0.000                      0.060                    0.929                      0.000                     0.000                   0.004
+From Downward Consolidation                0.002                0.034                      0.000                    0.000                      0.960                     0.000                   0.005
+From Downward Capitulation                 0.027                0.000                      0.032                    0.021                      0.000                     0.895                   0.024
+From Upward Capitulation                   0.005                0.019                      0.000                    0.000                      0.010                     0.046                   0.920
+
+=== State Characteristics ===
+
+State 0 (Bullish Trending):
+Mean: [-0.31957099 -0.8890624   0.22732427  0.30054058]
+Covariance:
+ [[ 0.16668895 -0.0329939  -0.10955428  0.14428678]
+ [-0.0329939   0.21035968  0.00854008 -0.1741442 ]
+ [-0.10955428  0.00854008  0.34084661 -0.1887646 ]
+ [ 0.14428678 -0.1741442  -0.1887646   1.30342698]]
+
+State 1 (Bearish Trending):
+Mean: [ 0.50122579 -0.60535529  0.51419074 -0.29083217]
+Covariance:
+ [[ 0.18326897  0.12514657 -0.29312205  0.00612418]
+ [ 0.12514657  0.39276813 -0.33659584 -0.07132502]
+ [-0.29312205 -0.33659584  0.90561544  0.02071807]
+ [ 0.00612418 -0.07132502  0.02071807  0.458227  ]]
+
+State 2 (Sideways Consolidation):
+Mean: [-0.84245372  0.00225911 -0.5559899   0.40942729]
+Covariance:
+ [[ 0.08219437  0.03347716 -0.00995253  0.04847223]
+ [ 0.03347716  0.53786075  0.00980789  0.07095236]
+ [-0.00995253  0.00980789  0.10008308 -0.08813305]
+ [ 0.04847223  0.07095236 -0.08813305  1.43891415]]
+
+State 3 (Upward Consolidation):
+Mean: [-0.72828682 -0.13615964 -1.12675602 -0.34608322]
+Covariance:
+ [[ 0.13114916 -0.00156883  0.01570764 -0.00292781]
+ [-0.00156883  0.13210598 -0.00191087 -0.01681994]
+ [ 0.01570764 -0.00191087  0.04013703  0.00406873]
+ [-0.00292781 -0.01681994  0.00406873  0.42617801]]
+
+State 4 (Downward Consolidation):
+Mean: [ 2.22226043e+00 -6.35005896e-01  6.06289290e-01 -1.11672128e-03]
+Covariance:
+ [[ 1.33746154  0.3348311  -0.24244843 -0.18434382]
+ [ 0.3348311   0.77140889 -0.51006856 -0.21033134]
+ [-0.24244843 -0.51006856  1.23754342  0.12382254]
+ [-0.18434382 -0.21033134  0.12382254  0.99737484]]
+
+State 5 (Downward Capitulation):
+Mean: [-0.13027782  0.24171477 -0.24964069 -0.39882828]
+Covariance:
+ [[ 0.13313166 -0.0093025  -0.1157295   0.00405747]
+ [-0.0093025   0.23891492  0.08860192  0.05989659]
+ [-0.1157295   0.08860192  0.27977291  0.00875155]
+ [ 0.00405747  0.05989659  0.00875155  0.29295124]]
+
+State 6 (Upward Capitulation):
+Mean: [0.39825105 1.5744497  1.11508841 0.43989741]
+Covariance:
+ [[ 0.61678564  0.09897147  0.15574713 -0.15309774]
+ [ 0.09897147  1.01273919  0.17722358  0.24981848]
+ [ 0.15574713  0.17722358  1.02762287 -0.49855569]
+ [-0.15309774  0.24981848 -0.49855569  1.40999815]]
+
+=== Performance Metrics ===
+Metric                    Training        OOS            
+Accuracy                  92.34%      92.08%
+Log-Likelihood            -66526.78      -29274.10
+BIC                       134074.77      59481.31
+
+=== Feature Importance ===
+volatility: 0.3253
+fisher_rsi: 0.2583
+adx: 0.2780
+volume_zscore: 0.1383

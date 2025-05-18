@@ -1,0 +1,9 @@
+# Intro
+- This is my first attempt at creating and deploying a live trading bot
+- It uses SP500 daily data
+- Incorporates a HMM model with other technical indicators to make decisions
+- Not too extreme, basic, just to get the feel of the process and how to accomplish each step
+    - Formulating a solid ML model
+    - Analysisng states
+    - Backtesting the model with trading rules
+    - Deploying the bot onto a Linux VPS

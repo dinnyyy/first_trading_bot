@@ -1,0 +1,78 @@
+=== HMM Model Statistics ===
+Saved at: 2025-05-11 00:51:32
+
+=== Model Configuration ===
+Number of states: 5
+Features used: volatility, fisher_rsi, adx, volume_zscore
+Training periods: 18384
+OOS periods: 7880
+
+=== State Distributions ===
+        State  Train Count   Train %  OOS Count     OOS %
+0    Trend Up         3901  0.212195       1060  0.134518
+1  Trend Down         5467  0.297378       2788  0.353807
+2    High Vol         3581  0.194789       1543  0.195812
+3     Low Vol         2267  0.123314       1016  0.128934
+4    Recovery         3168  0.172324       1473  0.186929
+
+=== Transition Matrix ===
+                 To Trend Up  To Trend Down  To High Vol  To Low Vol  To Recovery
+From Trend Up          0.944          0.000        0.000       0.000        0.056
+From Trend Down        0.023          0.888        0.001       0.001        0.087
+From High Vol          0.000          0.031        0.959       0.007        0.003
+From Low Vol           0.000          0.032        0.019       0.949        0.000
+From Recovery          0.028          0.129        0.029       0.027        0.787
+
+=== State Characteristics ===
+
+State 0 (Trend Up):
+Mean: [-0.83788481 -0.1314279  -0.98756051 -0.2065845 ]
+Covariance:
+ [[0.09186603 0.         0.         0.        ]
+ [0.         0.17747055 0.         0.        ]
+ [0.         0.         0.07971431 0.        ]
+ [0.         0.         0.         0.58814246]]
+
+State 1 (Trend Down):
+Mean: [-0.06825542 -0.04110459 -0.2485683  -0.53281827]
+Covariance:
+ [[0.27763649 0.         0.         0.        ]
+ [0.         0.23775314 0.         0.        ]
+ [0.         0.         0.27155958 0.        ]
+ [0.         0.         0.         0.15864839]]
+
+State 2 (High Vol):
+Mean: [ 0.95414959 -0.86515472  0.85094976 -0.07838164]
+Covariance:
+ [[1.95481549 0.         0.         0.        ]
+ [0.         0.43339403 0.         0.        ]
+ [0.         0.         0.84102737 0.        ]
+ [0.         0.         0.         0.74217024]]
+
+State 3 (Low Vol):
+Mean: [0.52459918 1.55066386 1.36469163 0.08913731]
+Covariance:
+ [[0.69974444 0.         0.         0.        ]
+ [0.         1.03004962 0.         0.        ]
+ [0.         0.         0.76865649 0.        ]
+ [0.         0.         0.         0.85744045]]
+
+State 4 (Recovery):
+Mean: [-0.30866961  0.09746802 -0.30261832  1.14725966]
+Covariance:
+ [[0.30812169 0.         0.         0.        ]
+ [0.         1.31172628 0.         0.        ]
+ [0.         0.         0.19850199 0.        ]
+ [0.         0.         0.         1.40747037]]
+
+=== Performance Metrics ===
+Metric                    Training        OOS            
+Accuracy                  91.32%      91.42%
+Log-Likelihood            -73994.93      -31963.15
+BIC                       148618.30      64500.52
+
+=== Feature Importance ===
+volatility: 0.2408
+fisher_rsi: 0.2401
+adx: 0.3356
+volume_zscore: 0.1836

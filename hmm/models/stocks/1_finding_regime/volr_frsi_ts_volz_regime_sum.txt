@@ -1,0 +1,19 @@
+HMM State Metrics (Train & OOS) - Evaluated on: 2025-05-16 16:00:00
+Features used: Vol_Regime, Fisher_RSI, Trend_Strength, Volume_Zscore
+Covariance type: full
+
+ Num_States  Train_LogLikelihood    Train_BIC  OOS_LogLikelihood       OOS_BIC  Converged
+          2          1262.697464 -2383.645612     -355044.007585 710213.669471       True
+          3          1545.870227 -2853.004765      -81915.156743 164041.941781       True
+          4          1765.656537 -3180.670030      -49430.550259  99171.929576       True
+          5          1620.196446 -2762.921512      -83573.593262 167570.443115       True
+          6          1749.102409 -2878.984123      -79156.362988 158861.636866       True
+          7                  NaN          NaN                NaN           NaN      False
+          8          1661.390162 -2375.298055      -25478.255219  51796.410233       True
+          9          1951.185321 -2768.376116      -16632.462079  34270.158559       True
+         10          1965.826400 -2596.225036       -4230.743093   9645.281961       True
+         11                  NaN          NaN                NaN           NaN      False
+         12          1832.708557 -1882.359930       -1370.850731   4322.300289       True
+         13          1754.617930 -1479.982497       -3058.798806   7916.438120       True
+         14          1767.701401 -1245.032279       -1136.882380   4304.073715       True
+         15                  NaN          NaN                NaN           NaN      False
