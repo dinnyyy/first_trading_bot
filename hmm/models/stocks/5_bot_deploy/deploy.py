@@ -7,12 +7,16 @@ import time
 from datetime import datetime, timedelta
 import os # For API keys
 from dotenv import load_dotenv # 1. Import the load_dotenv function
+from alpaca.data import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
 
 load_dotenv()
 
 API_KEY = os.environ.get('APCA_API_KEY_ID')
 API_SECRET = os.environ.get('APCA_API_SECRET_KEY')
 BASE_URL = os.environ.get('APCA_PAPER_URL')
+data_client = StockHistoricalDataClient(API_KEY, API_SECRET)
 
 SYMBOL = 'SPY'
 N_HISTORICAL_BARS = 34
@@ -45,7 +49,6 @@ try:
 except Exception as e:
     print(f"Error connecting to Alpaca: {e}")
     exit()
-
 # --- Load HMM Model and Scaler ---
 try:
     hmm_model = joblib.load(MODEL_PATH)
@@ -58,17 +61,43 @@ except Exception as e:
 def get_latest_market_data(symbol, timeframe, limit):
     """Fetches the latest market data bars from Alpaca."""
     try:
-        end_dt = pd.Timestamp.now(tz='America/New_York') # Alpaca uses America/New_York
-        start_dt = end_dt - pd.Timedelta(days=limit * 1.5)
-        bars_df = api.get_bars(symbol, timeframe,
-                           start=start_dt.strftime('%Y-%m-%dT%H:%M:%S-04:00'), # Explicit timezone
-                           end=end_dt.strftime('%Y-%m-%dT%H:%M:%S-04:00'),
-                           adjustment='raw').df # Get as pandas DataFrame
-        # Ensure data is sorted by time and has the correct columns
+        end_date = datetime.now() - timedelta(days=1)  # Yesterday
+        start_date = end_date - timedelta(days=limit)
+
+        # Format dates as strings
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+
+        # Create a request for stock bars (price data)
+        request_params = StockBarsRequest(
+            symbol_or_symbols=[symbol],
+            timeframe=TimeFrame.Day,
+            start=start_date_str,
+            end=end_date_str
+        )
+
+        # Fetch the data
+        bars = data_client.get_stock_bars(request_params)
+        cleaned_data = []
+        for row in bars['SPY']:
+            cleaned_row = {k: v for k, v in row}  # This unpacks the tuples
+            cleaned_data.append(cleaned_row)
+
+        bars_df = pd.DataFrame(cleaned_data)
+
+        # Display the cleaned DataFrame
+        # Convert the list of dictionaries to a pandas DataFrame
         bars_df = bars_df[['open', 'high', 'low', 'close', 'volume']]
         bars_df.index = pd.to_datetime(bars_df.index) # Ensure index is datetime
         bars_df = bars_df[~bars_df.index.duplicated(keep='last')] # Remove duplicates if any
         bars_df = bars_df.sort_index()
+        bars_df = bars_df.rename(columns={
+                        'open': 'Open',
+                        'high': 'High', 
+                        'low': 'Low',
+                        'close': 'Close',
+                        'volume': 'Volume'
+                    })
 
         if len(bars_df) >= limit:
             return bars_df.iloc[-limit:] # Return the most recent 'limit' bars

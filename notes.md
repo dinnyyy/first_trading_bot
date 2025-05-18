@@ -7,6 +7,8 @@
 - How to deploy bot, what do you need
 - Jim Simons
 
+- use droplet on digital ocean for Linux vps (https://cloud.digitalocean.com/droplets?i=588327)
+
 Basic Model to begin with:
 1. Data Source
 - Daily or hourly S&P 500 data (e.g., SPY ETF).
