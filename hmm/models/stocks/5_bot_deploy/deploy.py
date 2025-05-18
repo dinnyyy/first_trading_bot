@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 import os # For API keys
 from dotenv import load_dotenv # 1. Import the load_dotenv function
 
-
 load_dotenv()
 
 API_KEY = os.environ.get('APCA_API_KEY_ID')
