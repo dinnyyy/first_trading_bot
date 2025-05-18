@@ -40,8 +40,8 @@ class HMMStateStrategy(Strategy):
         - Capital risk capped per trade
         - Optional volatility filter
         """
-        OVERBOUGHT = 70
-        OVERSOLD = 30
+        OVERBOUGHT = 80
+        OVERSOLD = 20
         MAX_RISK_PER_TRADE = 0.02  # 2% of total equity
         price = self.data.Close[-1]
         cash = self.equity
@@ -59,7 +59,7 @@ class HMMStateStrategy(Strategy):
             return
 
         position_size = int(dollar_risk / sl_distance)
-
+        print(position_size)
         # Optional: skip trading during extreme volatility spikes
         if volatility > 2 * atr:
             print("Volatility too high, skipping trade.")
@@ -139,7 +139,7 @@ def preprocess_data(data_path, state_path):
     return df.dropna(subset=['State', 'returns'])
 
 def run_backtest(data, margin=1.0):
-    bt = Backtest(data, HMMStateStrategy, cash=100000, commission=0, margin=margin)
+    bt = Backtest(data, HMMStateStrategy, cash=10000, commission=0, margin=margin)
     stats = bt.run()
     return bt, stats
 
