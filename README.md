@@ -1,4 +1,3 @@
-# Intro
 - This is my first attempt at creating and deploying a live trading bot
 - It uses SP500 daily data
 - Incorporates a HMM model with other technical indicators to make decisions
