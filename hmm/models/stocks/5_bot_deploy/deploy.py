@@ -58,23 +58,18 @@ except Exception as e:
 def get_latest_market_data(symbol, timeframe, limit):
     """Fetches the latest market data bars from Alpaca."""
     try:
-        # For daily data, 'limit' is number of trading days.
         end_dt = pd.Timestamp.now(tz='America/New_York') # Alpaca uses America/New_York
-        start_dt = end_dt - pd.Timedelta(days=limit * 1.5) # Fetch a bit more to be safe for trading days for daily
-
-        # Use get_bars for wider historical range if needed
+        start_dt = end_dt - pd.Timedelta(days=limit * 1.5)
         bars_df = api.get_bars(symbol, timeframe,
-                               start=start_dt.strftime('%Y-%m-%dT%H:%M:%S-04:00'), # Explicit timezone
-                               end=end_dt.strftime('%Y-%m-%dT%H:%M:%S-04:00'),
-                               adjustment='raw').df # Get as pandas DataFrame
-
+                           start=start_dt.strftime('%Y-%m-%dT%H:%M:%S-04:00'), # Explicit timezone
+                           end=end_dt.strftime('%Y-%m-%dT%H:%M:%S-04:00'),
+                           adjustment='raw').df # Get as pandas DataFrame
         # Ensure data is sorted by time and has the correct columns
         bars_df = bars_df[['open', 'high', 'low', 'close', 'volume']]
         bars_df.index = pd.to_datetime(bars_df.index) # Ensure index is datetime
         bars_df = bars_df[~bars_df.index.duplicated(keep='last')] # Remove duplicates if any
         bars_df = bars_df.sort_index()
 
-        # Select only the required number of bars from the end
         if len(bars_df) >= limit:
             return bars_df.iloc[-limit:] # Return the most recent 'limit' bars
         else:
