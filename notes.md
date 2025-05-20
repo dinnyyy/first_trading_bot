@@ -53,3 +53,18 @@ Crypto
 Stocks
 - volas_frsis_ets_volvol 5 regime
 - retrunsl_rsi_macd_vola 5 regime
+
+# Learning
+
+Podcasts
+- top traders unplugged
+- flirting with models
+- better systems trader
+- jane street podcasts - signals
+
+Youtube
+- Partime Larry
+ - Peak Algo Trading Full Course 2023 | Commodity Market Futures (video) -> https://www.youtube.com/watch?v=rrbahhoePN4
+ - Algo Trading with Kevin Davey (channel) -> https://www.youtube.com/watch?v=pK1ukXMeDcw
+ - Darwinex Algo Trading for a Living (playlist) -> https://www.youtube.com/watch?v=RqVqbqYyHpI&list=PLv-cA-4O3y96b0gk8x3yPbqVM2gqafZAw
+ 
