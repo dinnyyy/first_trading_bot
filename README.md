@@ -5,4 +5,4 @@
     - Formulating a solid ML model
     - Analysisng states
     - Backtesting the model with trading rules
-    - Deploying the bot onto a Linux VPS
+    - Deploying the bot onto a Linux VPS using AWS lambda
