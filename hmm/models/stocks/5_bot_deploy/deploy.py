@@ -188,13 +188,6 @@ def execute_trade_strategy(current_hmm_state, symbol, current_features_df):
     """
     Executes trades based on HMM state, RSI, ATR, and volatility,
     with risk management.
-
-    Args:
-        current_hmm_state (float/int): The predicted HMM state.
-        symbol (str): The trading symbol ('SPY').
-        current_features_df (pd.DataFrame): DataFrame containing the latest calculated features
-                                            including 'RSI', 'ATR', and 'Volatility'.
-                                            Expected to be a single row.
     """
     print(f"--- Executing Trade Strategy for HMM State: {current_hmm_state} ---")
 
@@ -206,11 +199,10 @@ def execute_trade_strategy(current_hmm_state, symbol, current_features_df):
         return
 
     # Fetch necessary values from the features DataFrame
-    # Ensure these column names match what calculate_features() produces
     try:
         rsi = current_features_df['RSI'].iloc[0]
         atr = current_features_df['ATR'].iloc[0] 
-        volatility_metric = current_features_df['Volatility'].iloc[0] # Using the HMM feature 'Volatility'
+        volatility_metric = current_features_df['Volatility'].iloc[0]
         print(f"Extracted features: RSI={rsi:.2f}, ATR={atr:.2f}, VolatilityMetric={volatility_metric:.4f}")
     except KeyError as e:
         print(f"Error: Feature {e} not found in current_features_df. Columns: {current_features_df.columns}")
@@ -226,7 +218,7 @@ def execute_trade_strategy(current_hmm_state, symbol, current_features_df):
         return
     print(f"Current Price: {price}, Account Equity: {cash:.2f}")
 
-    # --- Your execute_trade logic adapted for Alpaca ---
+    # Trading parameters
     OVERBOUGHT = 80
     OVERSOLD = 20
     MAX_RISK_PER_TRADE = 0.02  # 2% of total equity
@@ -239,75 +231,95 @@ def execute_trade_strategy(current_hmm_state, symbol, current_features_df):
     tp_distance = 3.0 * atr
 
     # Calculate position size based on ATR risk
-    if atr == 0 or sl_distance == 0: # Added check for atr == 0 as well
+    if atr == 0 or sl_distance == 0:
         print("ATR or SL distance is zero; cannot compute position size or SL/TP. Skipping trade.")
         return
     
-    # Ensure position_size is at least 1 if any trade is to be made,
-    # and that dollar_risk / sl_distance is not negative (sl_distance should be positive)
     if sl_distance <= 0:
         print(f"SL distance ({sl_distance:.2f}) is not positive. Cannot calculate position size. Skipping trade.")
         return
         
     position_size_calculated = dollar_risk / sl_distance
-    if position_size_calculated < 1: # Cannot trade fractional shares of SPY easily this way
+    if position_size_calculated < 1:
         print(f"Calculated position size ({position_size_calculated:.2f}) is less than 1. Risk per trade or equity might be too low for current ATR. Skipping trade.")
         return
-    position_size = int(position_size_calculated) # Final position size to trade
+    position_size = int(position_size_calculated)
     
     print(f"Dollar Risk: ${dollar_risk:.2f}, SL Distance: ${sl_distance:.2f}, TP Distance: ${tp_distance:.2f}, Calculated Position Size: {position_size}")
 
-    # Get current position with Alpaca
+    # Get current position
     current_qty = 0
     is_long = False
     is_short = False
     try:
         position = api.get_position(symbol)
-        current_qty = float(position.qty) # Alpaca qty can be float for fractional
+        current_qty = float(position.qty)
         if current_qty > 0:
             is_long = True
         elif current_qty < 0:
             is_short = True
         print(f"Alpaca: Current position in {symbol}: {current_qty} shares.")
     except tradeapi.rest.APIError as e:
-        if e.status_code == 404: # HTTP 404 Error: "position does not exist"
+        if e.status_code == 404:
             print(f"Alpaca: No current position in {symbol}.")
             current_qty = 0
         else:
             print(f"Alpaca: Error getting position: {e}")
-            return # Don't proceed if we can't get position info
+            return
 
     # --- Trading Logic ---
     if action == 'Buy':
         # Conditions: Not already long, and RSI is not overbought
         if not is_long and rsi < OVERBOUGHT:
-            if is_short: # If currently short, close the short position first
+            if is_short:
                 print(f"Closing existing short position of {abs(current_qty)} shares before buying.")
                 try:
-                    api.close_position(symbol) # Closes entire position
+                    api.close_position(symbol)
                     print(f"Short position closed for {symbol}.")
-                    # Wait a moment for position to update if necessary, or re-fetch
-                    time.sleep(2) # Small delay
+                    time.sleep(2)
                 except Exception as e_close:
                     print(f"Error closing short position: {e_close}")
-                    return # Don't proceed with buy if close failed
+                    return
             
             # Place new buy order with SL/TP
             print(f"Attempting to BUY {position_size} shares of {symbol} with SL/TP.")
             try:
-                api.submit_order(
-                    symbol=symbol,
-                    qty=position_size,
-                    side='buy',
-                    type='market',
-                    time_in_force='day', # Good Till Day
-                    order_class='oto',  # One-Triggers-Other for SL/TP (bracket order)
-                    stop_loss={'stop_price': round(price - sl_distance, 2)},
-                    take_profit={'limit_price': round(price + tp_distance, 2)}
-                )
+                # First create the order with stop loss and take profit
+                order_params = {
+                    'symbol': symbol,
+                    'qty': position_size,
+                    'side': 'buy',
+                    'type': 'market',
+                    'time_in_force': 'gtc',
+                    'order_class': 'bracket',
+                    'stop_loss': {
+                        'stop_price': round(price - sl_distance, 2),
+                        'limit_price': round(price - sl_distance * 0.99, 2)  # Slightly better price for limit
+                    },
+                    'take_profit': {
+                        'limit_price': round(price + tp_distance, 2)
+                    }
+                }
+                
+                # Submit the order
+                api.submit_order(**order_params)
                 print(f"BUY order for {position_size} {symbol} submitted with SL: {price - sl_distance:.2f}, TP: {price + tp_distance:.2f} (RSI: {rsi:.1f})")
             except Exception as e_buy:
                 print(f"Alpaca: BUY order failed: {e_buy} (RSI: {rsi:.1f})")
+                # Fallback to regular market order if bracket order fails
+                try:
+                    print("Attempting regular market order without SL/TP")
+                    api.submit_order(
+                        symbol=symbol,
+                        qty=position_size,
+                        side='buy',
+                        type='market',
+                        time_in_force='gtc'
+                    )
+                    print(f"Regular BUY order for {position_size} {symbol} submitted")
+                except Exception as e_fallback:
+                    print(f"Alpaca: Fallback BUY order also failed: {e_fallback}")
+
         elif is_long:
             print(f"Strategy: Buy signal, but already long {current_qty} shares. No action.")
         elif rsi >= OVERBOUGHT:
@@ -316,32 +328,55 @@ def execute_trade_strategy(current_hmm_state, symbol, current_features_df):
     elif action == 'Sell':
         # Conditions: Not already short, and RSI is not oversold
         if not is_short and rsi > OVERSOLD:
-            if is_long: # If currently long, close the long position first
+            if is_long:
                 print(f"Closing existing long position of {abs(current_qty)} shares before selling/shorting.")
                 try:
-                    api.close_position(symbol) # Closes entire position
+                    api.close_position(symbol)
                     print(f"Long position closed for {symbol}.")
-                    time.sleep(2) # Small delay
+                    time.sleep(2)
                 except Exception as e_close:
                     print(f"Error closing long position: {e_close}")
-                    return # Don't proceed if close failed
+                    return
 
             # Place new sell/short order with SL/TP
             print(f"Attempting to SELL/SHORT {position_size} shares of {symbol} with SL/TP.")
             try:
-                api.submit_order(
-                    symbol=symbol,
-                    qty=position_size, # For shorting, qty is positive
-                    side='sell',
-                    type='market',
-                    time_in_force='day',
-                    order_class='oto',
-                    stop_loss={'stop_price': round(price + sl_distance, 2)},
-                    take_profit={'limit_price': round(price - tp_distance, 2)}
-                )
+                # First create the order with stop loss and take profit
+                order_params = {
+                    'symbol': symbol,
+                    'qty': position_size,
+                    'side': 'sell',
+                    'type': 'market',
+                    'time_in_force': 'gtc',
+                    'order_class': 'bracket',
+                    'stop_loss': {
+                        'stop_price': round(price + sl_distance, 2),
+                        'limit_price': round(price + sl_distance * 1.01, 2)  # Slightly worse price for limit
+                    },
+                    'take_profit': {
+                        'limit_price': round(price - tp_distance, 2)
+                    }
+                }
+                
+                # Submit the order
+                api.submit_order(**order_params)
                 print(f"SELL/SHORT order for {position_size} {symbol} submitted with SL: {price + sl_distance:.2f}, TP: {price - tp_distance:.2f} (RSI: {rsi:.1f})")
             except Exception as e_sell:
                 print(f"Alpaca: SELL/SHORT order failed: {e_sell} (RSI: {rsi:.1f})")
+                # Fallback to regular market order if bracket order fails
+                try:
+                    print("Attempting regular market order without SL/TP")
+                    api.submit_order(
+                        symbol=symbol,
+                        qty=position_size,
+                        side='sell',
+                        type='market',
+                        time_in_force='gtc'
+                    )
+                    print(f"Regular SELL order for {position_size} {symbol} submitted")
+                except Exception as e_fallback:
+                    print(f"Alpaca: Fallback SELL order also failed: {e_fallback}")
+    
         elif is_short:
             print(f"Strategy: Sell signal, but already short {current_qty} shares. No action.")
         elif rsi <= OVERSOLD:
@@ -371,7 +406,6 @@ def run_bot():
         return
 
     # 2. Calculate HMM Features
-
     if len(market_data_df_full) < N_HISTORICAL_BARS:
          print(f"Not enough data in market_data_df_full ({len(market_data_df_full)}) for HMM features ({N_HISTORICAL_BARS}).")
          return
@@ -404,6 +438,13 @@ def run_bot():
 
     print(f"Strategy Indicators for latest bar: ATR={current_atr_value:.2f}, RSI={current_rsi_strat_value:.2f}, Volatility={current_volatility_strat_value:.4f}")
 
+    # Create the current_features_df that execute_trade_strategy expects
+    current_features_df = pd.DataFrame({
+        'RSI': [current_rsi_strat_value],
+        'ATR': [current_atr_value],
+        'Volatility': [current_volatility_strat_value]
+    })
+
     # 5. Execute Strategy
     if not api.get_clock().is_open:
         print(f"Market is currently closed. Predicted HMM state {predicted_state}, but no trading actions taken.")
@@ -411,9 +452,7 @@ def run_bot():
         execute_trade_strategy(
             current_hmm_state=predicted_state,
             symbol=SYMBOL,
-            rsi_strat=current_rsi_strat_value,
-            atr_strat=current_atr_value,
-            volatility_strat=current_volatility_strat_value
+            current_features_df=current_features_df
         )
     
     print("--- Bot Cycle Complete ---")
@@ -421,32 +460,32 @@ def run_bot():
 # --- Main Loop / Scheduler ---
 if __name__ == "__main__":
     # For a simple test, run once:
-    # run_bot() 
+    run_bot() 
 
     # For continuous operation:
     # Use a scheduler like 'schedule' or APScheduler
-    # Example with 'schedule' library (pip install schedule)
-    import schedule
+    # # Example with 'schedule' library (pip install schedule)
+    # import schedule
     
-    if BAR_TIMEFRAME == '1Day':
-        # Example: Run once a day after market open (adjust time as needed)
-        # Ensure your data fetching gets data *up to yesterday's close* if trading at today's open
-        schedule.every().day.at("09:35", "America/New_York").do(run_bot) # Example: 5 mins after open
-        print("Scheduled daily run at 09:35 New York time.")
-    elif 'Min' in BAR_TIMEFRAME or 'Hour' in BAR_TIMEFRAME:
-        interval = int(BAR_TIMEFRAME.replace('Min','').replace('Hour',''))
-        if 'Min' in BAR_TIMEFRAME:
-            schedule.every(interval).minutes.do(run_bot)
-            print(f"Scheduled run every {interval} minutes.")
-        elif 'Hour' in BAR_TIMEFRAME:
-            schedule.every(interval).hours.do(run_bot)
-            print(f"Scheduled run every {interval} hours.")
-    else:
-        print(f"Unsupported BAR_TIMEFRAME for scheduling: {BAR_TIMEFRAME}. Running once for test.")
-        run_bot()
-        exit()
+    # if BAR_TIMEFRAME == '1Day':
+    #     # Example: Run once a day after market open (adjust time as needed)
+    #     # Ensure your data fetching gets data *up to yesterday's close* if trading at today's open
+    #     schedule.every().day.at("09:35", "America/New_York").do(run_bot) # Example: 5 mins after open
+    #     print("Scheduled daily run at 09:35 New York time.")
+    # elif 'Min' in BAR_TIMEFRAME or 'Hour' in BAR_TIMEFRAME:
+    #     interval = int(BAR_TIMEFRAME.replace('Min','').replace('Hour',''))
+    #     if 'Min' in BAR_TIMEFRAME:
+    #         schedule.every(interval).minutes.do(run_bot)
+    #         print(f"Scheduled run every {interval} minutes.")
+    #     elif 'Hour' in BAR_TIMEFRAME:
+    #         schedule.every(interval).hours.do(run_bot)
+    #         print(f"Scheduled run every {interval} hours.")
+    # else:
+    #     print(f"Unsupported BAR_TIMEFRAME for scheduling: {BAR_TIMEFRAME}. Running once for test.")
+    #     run_bot()
+    #     exit()
 
-    print(f"Bot started. Waiting for scheduled runs... Press Ctrl+C to exit.")
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    # print(f"Bot started. Waiting for scheduled runs... Press Ctrl+C to exit.")
+    # while True:
+    #     schedule.run_pending()
+    #     time.sleep(1)

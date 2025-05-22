@@ -1,70 +1,54 @@
 # lambda_function.py
-
-import alpaca_trade_api as tradeapi # For trading client
-from alpaca.data import StockHistoricalDataClient # For market data client
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
+import sys
+sys.path.append('/var/task/package')
+import os
+import time
 import joblib
 import pandas as pd
 import numpy as np
+# Then use nan in your code (without np prefix)
 import pandas_ta as ta
-import time # For potential small delays after closing positions
 from datetime import datetime, timedelta
-import os
 import pytz
 
-# --- Load Environment Variables (best practice for Lambda) ---
-# These will be set in the Lambda function's configuration
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest, TakeProfitRequest, StopLossRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
+from alpaca.data import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.timeframe import TimeFrame
+
+# --- Load Environment Variables ---
 API_KEY = os.environ.get('APCA_API_KEY_ID')
 API_SECRET = os.environ.get('APCA_API_SECRET_KEY')
-BASE_URL = os.environ.get('APCA_PAPER_URL') # For trading client
-# Note: StockHistoricalDataClient doesn't use BASE_URL in the same way; it defaults.
+BASE_URL = os.environ.get('APCA_PAPER_URL')
 
-# --- CONFIGURATION (can also be Lambda environment variables) ---
+# --- CONFIGURATION ---
 SYMBOL = os.environ.get('SYMBOL', 'SPY')
 N_HISTORICAL_BARS_FOR_HMM = int(os.environ.get('N_HISTORICAL_BARS_FOR_HMM', 34))
-# Determine max lookback for strategy TAs separately
 LOOKBACK_RSI_STRAT = 14
 LOOKBACK_ATR_STRAT = 14
 LOOKBACK_VOL_STRAT = 20
-MIN_BARS_FOR_STRAT_TA = max(LOOKBACK_RSI_STRAT, LOOKBACK_ATR_STRAT, LOOKBACK_VOL_STRAT) + 1 # +1 for pct_change if needed
+MIN_BARS_FOR_STRAT_TA = max(LOOKBACK_RSI_STRAT, LOOKBACK_ATR_STRAT, LOOKBACK_VOL_STRAT) + 1
 
-BAR_TIMEFRAME_STR = os.environ.get('BAR_TIMEFRAME', '1Day') # e.g., '1Day', '1Hour', '5Min'
-# Convert string to Alpaca TimeFrame object
+BAR_TIMEFRAME_STR = os.environ.get('BAR_TIMEFRAME', '1Day')
 if BAR_TIMEFRAME_STR == '1Day':
     ALPACA_TIMEFRAME = TimeFrame.Day
 elif BAR_TIMEFRAME_STR == '1Hour':
     ALPACA_TIMEFRAME = TimeFrame.Hour
 elif 'Min' in BAR_TIMEFRAME_STR:
-    try:
-        minutes = int(BAR_TIMEFRAME_STR.replace('Min',''))
-        ALPACA_TIMEFRAME = TimeFrame.Minute_granularity(TimeFrame.Minute, minutes) # Or just TimeFrame.Minute if 1Min
-        if minutes == 1: ALPACA_TIMEFRAME = TimeFrame.Minute
-        elif minutes == 5: ALPACA_TIMEFRAME = TimeFrame.Minute_granularity(TimeFrame.Minute, 5) # Be specific
-        # Add more cases for 15Min, 30Min etc. if needed
-        else: raise ValueError(f"Unsupported minute timeframe: {minutes}")
-    except ValueError:
-        print(f"Error: Invalid BAR_TIMEFRAME '{BAR_TIMEFRAME_STR}'. Defaulting to Day.")
-        ALPACA_TIMEFRAME = TimeFrame.Day
+    minutes = int(BAR_TIMEFRAME_STR.replace('Min', ''))
+    ALPACA_TIMEFRAME = TimeFrame.Minute if minutes == 1 else TimeFrame.Minute(minutes)
 else:
-    print(f"Warning: Unrecognized BAR_TIMEFRAME '{BAR_TIMEFRAME_STR}'. Defaulting to Day.")
     ALPACA_TIMEFRAME = TimeFrame.Day
 
+MODEL_FILE_NAME = 'model.joblib'
+SCALER_FILE_NAME = 'scaler.joblib'
 
-MODEL_FILE_NAME = 'model.joblib'    # Assumed to be in the root of the ZIP
-SCALER_FILE_NAME = 'scaler.joblib'  # Assumed to be in the root of the ZIP
+FEATURES = ['Returns_t', 'Returns_t_1', 'Returns_t_2', 'RSI', 'MACD_Signal', 'Volatility']
+TRADING_RULES_HMM = {3.0: 'Sell', 0.0: 'Sell', 1.0: 'Hold', 2.0: 'Buy', 4.0: 'Buy'}
 
-FEATURES = [
-    'Returns_t', 'Returns_t_1', 'Returns_t_2',
-    'RSI', 'MACD_Signal', 'Volatility'
-]
-
-TRADING_RULES_HMM = { # Using float keys as predicted_state is float
-    3.0: 'Sell', 0.0: 'Sell', 1.0: 'Hold',
-    2.0: 'Buy',  4.0: 'Buy'
-}
-
-# --- Global variables for "warm starts" ---
+# --- Globals ---
 trading_client = None
 market_data_client = None
 hmm_model_global = None
@@ -72,16 +56,16 @@ scaler_global = None
 
 def initialize_globals():
     global trading_client, market_data_client, hmm_model_global, scaler_global
-    
+
     if trading_client is None:
-        print("Initializing Alpaca Trading API client...")
+        print("Initializing Alpaca TradingClient...")
         try:
-            trading_client = tradeapi.REST(API_KEY, API_SECRET, base_url=BASE_URL, api_version='v2')
-            trading_client.get_account() # Test connection
-            print("Trading client initialized.")
+            trading_client = TradingClient(API_KEY, API_SECRET, paper=True)
+            account = trading_client.get_account()
+            print(f"Trading client initialized. Account equity: ${account.equity}")
         except Exception as e:
             print(f"FATAL: Error initializing trading client: {e}")
-            raise # Re-raise to stop Lambda execution if client fails
+            raise
 
     if market_data_client is None:
         print("Initializing Alpaca Market Data client...")
@@ -100,7 +84,7 @@ def initialize_globals():
         except Exception as e:
             print(f"FATAL: Error loading HMM model: {e}")
             raise
-            
+
     if scaler_global is None:
         print(f"Loading scaler from {SCALER_FILE_NAME}...")
         try:
@@ -109,86 +93,58 @@ def initialize_globals():
         except Exception as e:
             print(f"FATAL: Error loading scaler: {e}")
             raise
-    print("All globals checked/initialized.")
 
+    print("All globals initialized successfully.")
 
-def get_latest_market_data_lambda(md_client, symbol, alpaca_tf, limit_bars):
-    print(f"Fetching up to {limit_bars} bars of {alpaca_tf} data for {symbol}...")
+def get_latest_market_data_lambda(symbol, timeframe, limit):
+    """Fetches the latest market data bars from Alpaca."""
     try:
-        # For daily, you often want data up to *yesterday's* close to make decisions for *today*.
-        # If BAR_TIMEFRAME is daily and you run this early morning, fetching up to "now" might
-        # not yet include today's (incomplete) bar or might give an error if market isn't open.
-        # It's often safer to explicitly define the end for daily data.
-        if alpaca_tf == TimeFrame.Day:
-            # Fetch data up to the end of the previous trading day relative to "now" in NY
-            now_ny = datetime.now(tz=pytz.timezone('America/New_York'))
-            # If it's before market close, "yesterday" is literally yesterday.
-            # If it's after market close, "yesterday" is today (as today's bar has closed).
-            # This logic can get complex with market hours. A simpler approach for daily:
-            end_date_req = datetime.now() - timedelta(minutes=15) # Ensure we are looking for closed bars
-        else: # For intraday, fetching up to "now" is usually fine.
-            end_date_req = datetime.now()
+        end_date = datetime.now() - timedelta(days=1)  # Yesterday
+        start_date = end_date - timedelta(days=limit)
 
+        # Format dates as strings
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
 
-        # Calculate start date robustly
-        # This needs enough *calendar days* to cover `limit_bars` *trading bars*.
-        # For daily, limit_bars * 1.8 is a rough estimate. Add buffer.
-        if alpaca_tf == TimeFrame.Day:
-            calendar_days_to_go_back = max(int(limit_bars * 1.8), limit_bars + 45) # More buffer for daily
-        else: # Intraday
-            # Estimate how many days back for intraday (very rough)
-            trading_hours_per_day = 6.5
-            bars_per_hour = 60 / alpaca_tf.value if alpaca_tf.unit == TimeFrame.Minute else 1 # Assuming alpaca_tf.value is minutes
-            bars_per_day = trading_hours_per_day * bars_per_hour
-            calendar_days_to_go_back = max(int(limit_bars / bars_per_day) + 5, 10) # Add buffer days
-
-        start_date_req = datetime.now() - timedelta(days=calendar_days_to_go_back)
-        
-        # Ensure start_date_req is not too far in the past if limit_bars is small for intraday
-        # Max lookback typically a few days for intraday via this type of query.
-        # Alpaca's API might have its own limits on query range.
-
-        print(f"Data request range: Start={start_date_req.strftime('%Y-%m-%d')}, End={end_date_req.strftime('%Y-%m-%d')}")
-
+        # Create a request for stock bars (price data)
         request_params = StockBarsRequest(
             symbol_or_symbols=[symbol],
-            timeframe=alpaca_tf,
-            start=start_date_req, # Pass datetime objects
-            end=end_date_req      # Pass datetime objects
+            timeframe=TimeFrame.Day,
+            start=start_date_str,
+            end=end_date_str
         )
-        bars_data = md_client.get_stock_bars(request_params)
-        if not bars_data or symbol not in bars_data.data:
-            print(f"No bars data returned for {symbol}.")
-            return pd.DataFrame()
 
-        bars_df = pd.DataFrame([bar.dict() for bar in bars_data.data[symbol]]) # Convert Bar objects to dicts
-        if bars_df.empty:
-            print(f"Fetched DataFrame is empty for {symbol}.")
-            return pd.DataFrame()
+        # Fetch the data
+        bars = market_data_client.get_stock_bars(request_params)
+        cleaned_data = []
+        for row in bars['SPY']:
+            cleaned_row = {k: v for k, v in row}  # This unpacks the tuples
+            cleaned_data.append(cleaned_row)
 
-        bars_df.rename(columns={'open':'Open', 'high':'High', 'low':'Low', 'close':'Close', 'volume':'Volume', 'timestamp':'Timestamp'}, inplace=True)
-        bars_df['Timestamp'] = pd.to_datetime(bars_df['Timestamp'])
-        bars_df.set_index('Timestamp', inplace=True)
-        
-        # Optional: Filter for US trading hours if intraday to remove pre/post market
-        if alpaca_tf.unit == TimeFrame.Minute or alpaca_tf.unit == TimeFrame.Hour:
-             bars_df = bars_df.tz_convert('America/New_York') # Ensure correct timezone for between_time
-             bars_df = bars_df.between_time('09:30', '16:00')
-             bars_df = bars_df.tz_convert('UTC') # Convert back to UTC if needed, or keep NY
+        bars_df = pd.DataFrame(cleaned_data)
 
-        bars_df = bars_df[~bars_df.index.duplicated(keep='last')].sort_index()
+        # Display the cleaned DataFrame
+        # Convert the list of dictionaries to a pandas DataFrame
+        bars_df = bars_df[['open', 'high', 'low', 'close', 'volume']]
+        bars_df.index = pd.to_datetime(bars_df.index) # Ensure index is datetime
+        bars_df = bars_df[~bars_df.index.duplicated(keep='last')] # Remove duplicates if any
+        bars_df = bars_df.sort_index()
+        bars_df = bars_df.rename(columns={
+                        'open': 'Open',
+                        'high': 'High', 
+                        'low': 'Low',
+                        'close': 'Close',
+                        'volume': 'Volume'
+                    })
 
-        if len(bars_df) >= limit_bars:
-            print(f"Successfully fetched {len(bars_df)} bars for {symbol}. Using the latest {limit_bars}.")
-            return bars_df.iloc[-limit_bars:]
+        if len(bars_df) >= limit:
+            return bars_df.iloc[-limit:] # Return the most recent 'limit' bars
         else:
-            print(f"Warning: Fetched {len(bars_df)} bars for {symbol}, less than required {limit_bars}.")
-            return bars_df # Return what was fetched, subsequent checks handle insufficient data
-            
+            print(f"Warning: Fetched {len(bars_df)} bars, less than required {limit}.")
+            return bars_df # Or handle error if not enough data
+
     except Exception as e:
-        print(f"Error in get_latest_market_data_lambda for {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error fetching market data for {symbol}: {e}")
         return pd.DataFrame()
 
 
@@ -199,14 +155,10 @@ def calculate_hmm_features_lambda(df_full_history, hmm_features_list):
     df['Returns_t_2_calc'] = df['Returns_t_calc'].shift(2)
     df['RSI_calc'] = ta.rsi(df['Close'], length=14)
     macd_data = ta.macd(df['Close'], fast=12, slow=26, signal=9)
-    df['MACD_Signal_calc'] = macd_data['MACDs_12_26_9'] if macd_data is not None and not macd_data.empty else np.nan
+    df['MACD_Signal_calc'] = macd_data['MACDs_12_26_9'] if macd_data is not None else np.nan
     df['Volatility_calc'] = df['Returns_t_calc'].rolling(window=20).std()
 
-    hmm_df = pd.DataFrame(index=df.index)
-    # Map internal calculation names to the names expected by the HMM FEATURES list
-    # This mapping ensures flexibility if your FEATURES list uses slightly different names
-    # than your direct calculation outputs.
-    feature_component_map = {
+    feature_map = {
         'Returns_t': 'Returns_t_calc',
         'Returns_t_1': 'Returns_t_1_calc',
         'Returns_t_2': 'Returns_t_2_calc',
@@ -214,208 +166,232 @@ def calculate_hmm_features_lambda(df_full_history, hmm_features_list):
         'MACD_Signal': 'MACD_Signal_calc',
         'Volatility': 'Volatility_calc'
     }
-    for feature_name_expected_by_hmm in hmm_features_list:
-        calc_col_name = feature_component_map.get(feature_name_expected_by_hmm)
-        if calc_col_name and calc_col_name in df.columns:
-            hmm_df[feature_name_expected_by_hmm] = df[calc_col_name]
-        else:
-            print(f"Warning: Component for HMM feature '{feature_name_expected_by_hmm}' not found or mapping missing.")
-            hmm_df[feature_name_expected_by_hmm] = np.nan # Ensure column exists
 
-    latest_hmm_features = hmm_df[hmm_features_list].iloc[-1:].copy()
-    if latest_hmm_features.isnull().values.any():
-        print(f"NaNs in final HMM features for {df.index[-1] if not df.empty else 'N/A'}: {latest_hmm_features[latest_hmm_features.isnull().any(axis=1)]}")
+    hmm_df = pd.DataFrame(index=df.index)
+    for feat in hmm_features_list:
+        hmm_df[feat] = df[feature_map.get(feat, '')]
+
+    latest = hmm_df.iloc[-1:]
+    if latest.isnull().values.any():
+        print("NaNs found in final HMM features:", latest)
         return pd.DataFrame()
-    return latest_hmm_features
+    return latest
+
 
 def predict_hmm_state_lambda(scaler_obj, model_obj, features_df):
-    if features_df.empty: return None
+    if features_df.empty:
+        return None
     try:
-        scaled_features = scaler_obj.transform(features_df)
-        return model_obj.predict(scaled_features)[0]
+        scaled = scaler_obj.transform(features_df)
+        return model_obj.predict(scaled)[0]
     except Exception as e:
-        print(f"Error predicting HMM state: {e}\nFeatures:\n{features_df}")
+        print(f"Prediction failed: {e}")
         return None
 
-def get_current_price_and_account_equity_lambda(trade_client, symbol_str):
-    latest_price, account_equity = None, None
+
+def get_current_price_and_account_equity_lambda(trade_client, symbol):
     try:
-        latest_trade = trade_client.get_latest_trade(symbol_str)
-        latest_price = float(latest_trade.p)
-    except Exception as e: print(f"Error getting latest price: {e}")
+        request_params = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+        latest_price = StockHistoricalDataClient(API_KEY, API_SECRET).get_stock_latest_quote(request_params)[symbol].ask_price
+        price = float(latest_price)
+    except Exception as e:
+        print(f"Failed to get latest price: {e}")
+        price = None
+
     try:
-        account_info = trade_client.get_account()
-        account_equity = float(account_info.equity)
-    except Exception as e: print(f"Error getting account equity: {e}")
-    return latest_price, account_equity
+        account = trade_client.get_account()
+        equity = float(account.equity)
+    except Exception as e:
+        print(f"Failed to get account equity: {e}")
+        equity = None
 
-def execute_trade_strategy_lambda(trade_client_obj, current_hmm_state_val, symbol_str, 
-                                  rsi_for_strat, atr_for_strat, volatility_for_strat, 
-                                  rules_dict):
-    print(f"--- Executing Trade Strategy for HMM State: {current_hmm_state_val} ---")
-    # Convert HMM state to float for dict lookup, then to string if dict keys are strings
-    action = rules_dict.get(current_hmm_state_val, 'Hold') # Assuming HMM state is float and keys are float
-    # If TRADING_RULES_HMM keys are strings like '3.0', convert:
-    # action = rules_dict.get(str(float(current_hmm_state_val)), 'Hold')
+    return price, equity
 
-    print(f"HMM State {current_hmm_state_val} -> Action: {action}")
-    if action == 'Hold': print("Strategy: Hold."); return
 
-    if pd.isna(rsi_for_strat) or pd.isna(atr_for_strat) or pd.isna(volatility_for_strat):
-        print(f"Strategy indicators NaN: RSI={rsi_for_strat}, ATR={atr_for_strat}, Vol={volatility_for_strat}. Skipping.")
+def execute_trade_strategy_lambda(trade_client, hmm_state, symbol, 
+                                  rsi_val, atr_val, vol_val,
+                                  hmm_rules):
+
+    print(f"\n--- Executing Trade Strategy for HMM State: {hmm_state} ---")
+
+    action = hmm_rules.get(hmm_state, 'Hold')
+    print(f"HMM State: {hmm_state} => Action: {action}")
+
+    if action == 'Hold':
+        print("Decision: Hold. No action taken.")
         return
-        
-    price, cash = get_current_price_and_account_equity_lambda(trade_client_obj, symbol_str)
-    if price is None or cash is None: print("No price/cash. Skipping."); return
-    print(f"Current Price: {price}, Account Equity: {cash:.2f}")
 
-    OVERBOUGHT, OVERSOLD, MAX_RISK_PCT = 80, 20, 0.02 # From your example
-    dollar_risk = MAX_RISK_PCT * cash
-    sl_dist, tp_dist = 1.5 * atr_for_strat, 3.0 * atr_for_strat
+    if any(pd.isna(v) for v in [rsi_val, atr_val, vol_val]):
+        print(f"NaN values in indicators. RSI={rsi_val}, ATR={atr_val}, Vol={vol_val}")
+        return
 
-    if atr_for_strat <= 0 or sl_dist <= 0 : print(f"Invalid ATR/SL dist. ATR={atr_for_strat}. Skipping."); return
-    pos_size_calc = dollar_risk / sl_dist
-    if pos_size_calc < 1 : print(f"Pos size < 1 ({pos_size_calc:.2f}). Skipping."); return
-    position_size = int(pos_size_calc)
-    print(f"Dollar Risk: ${dollar_risk:.2f}, SL: ${sl_dist:.2f}, TP: ${tp_dist:.2f}, Size: {position_size}")
+    price, equity = get_current_price_and_account_equity_lambda(trade_client, symbol)
+    if price is None or equity is None:
+        print("Price or account equity unavailable. Skipping trade.")
+        return
 
-    # Volatility filter (ensure volatility_for_strat and atr_for_strat are comparable scales)
-    if volatility_for_strat > (2 * atr_for_strat): # Review this condition
-        print(f"High vol skip: Vol={volatility_for_strat:.4f}, 2*ATR={2*atr_for_strat:.4f}"); return
+    print(f"Price: {price}, Equity: {equity:.2f}")
+    dollar_risk = equity * 0.02
+    stop_loss_dist = 1.5 * atr_val
+    take_profit_dist = 3.0 * atr_val
 
-    curr_qty, is_long, is_short = 0.0, False, False
+    if atr_val <= 0 or stop_loss_dist <= 0:
+        print("Invalid ATR or SL distance.")
+        return
+
+    position_size = int(dollar_risk / stop_loss_dist)
+    if position_size < 1:
+        print("Calculated position size < 1. Skipping.")
+        return
+
+    print(f"Calculated position: {position_size} shares | Risk ${dollar_risk:.2f}, SL ${stop_loss_dist:.2f}, TP ${take_profit_dist:.2f}")
+
+    if vol_val > (2 * atr_val):
+        print(f"Volatility too high. Vol={vol_val:.4f}, 2*ATR={2 * atr_val:.4f}")
+        return
+
+    # Check if there is an open position
+    open_position = None
     try:
-        pos = trade_client_obj.get_position(symbol_str)
-        curr_qty, is_long, is_short = float(pos.qty), float(pos.qty) > 0, float(pos.qty) < 0
-    except tradeapi.rest.APIError as e:
-        if e.status_code != 404: print(f"Get pos error: {e}"); return
-    print(f"Current pos: {curr_qty} shares.")
+        open_position = trade_client.get_open_position(symbol)
+        qty = float(open_position.qty_available)
+        print(f"Open position detected: {qty} shares")
+    except Exception:
+        print("No open position.")
 
-    order_details = {'symbol': symbol_str, 'qty': position_size, 'type': 'market', 'time_in_force': 'day', 'order_class': 'oto'}
-    trade_action_taken = False
-
-    if action == 'Buy' and not is_long and rsi_for_strat < OVERBOUGHT:
-        if is_short:
-            try: trade_client_obj.close_position(symbol_str); print("Closed short."); time.sleep(1)
-            except Exception as ec: print(f"Close short fail: {ec}"); return
-        order_details.update({'side': 'buy', 'stop_loss': {'stop_price': round(price - sl_dist, 2)}, 'take_profit': {'limit_price': round(price + tp_dist, 2)}})
-        trade_action_taken = True
-    elif action == 'Sell' and not is_short and rsi_for_strat > OVERSOLD:
-        if is_long:
-            try: trade_client_obj.close_position(symbol_str); print("Closed long."); time.sleep(1)
-            except Exception as ec: print(f"Close long fail: {ec}"); return
-        order_details.update({'side': 'sell', 'stop_loss': {'stop_price': round(price + sl_dist, 2)}, 'take_profit': {'limit_price': round(price - tp_dist, 2)}})
-        trade_action_taken = True
+    # Define order parameters
+    side = OrderSide.BUY if action == 'Buy' else OrderSide.SELL
+    
+    # Calculate stop loss and take profit prices
+    if side == OrderSide.BUY:
+        stop_price = round(price - stop_loss_dist, 2)
+        limit_price = round(price + take_profit_dist, 2)
     else:
-        print(f"Conditions not met for {action} or already in position. RSI: {rsi_for_strat:.1f}")
-
-    if trade_action_taken:
+        stop_price = round(price + stop_loss_dist, 2)
+        limit_price = round(price - take_profit_dist, 2)
+    
+    # Flatten existing position (if needed)
+    if open_position:
         try:
-            trade_client_obj.submit_order(**order_details)
-            print(f"{order_details['side'].upper()} order for {position_size} submitted.")
-        except Exception as e_ord: print(f"{order_details['side'].upper()} order failed: {e_ord}")
+            print("Closing existing position...")
+            trade_client.close_position(symbol)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Failed to close existing position: {e}")
+            return
+
+    # Submit order with bracket parameters
+    try:
+        order_req = MarketOrderRequest(
+            symbol=symbol,
+            qty=position_size,
+            side=side,
+            time_in_force=TimeInForce.DAY,
+            order_class=OrderClass.BRACKET,
+            stop_loss={"stop_price": stop_price},
+            take_profit={"limit_price": limit_price}
+        )
+        
+        submitted_order = trade_client.submit_order(order_req)
+        print(f"Submitted {side.name} order: ID={submitted_order.id}")
+    except Exception as e:
+        print(f"Failed to submit order: {e}")
+        print("Trying alternative order approach...")
+        
+        # Try a simple market order without OTO if the above fails
+        try:
+            simple_order = MarketOrderRequest(
+                symbol=symbol,
+                qty=position_size,
+                side=side,
+                time_in_force=TimeInForce.DAY
+            )
+            submitted_order = trade_client.submit_order(simple_order)
+            print(f"Submitted simple {side.name} order: ID={submitted_order.id}")
+        except Exception as e2:
+            print(f"Failed to submit simple order: {e2}")
+
     print("--- Trade Strategy Execution Complete ---")
 
 
-# --- Lambda Handler Function ---
 def lambda_handler(event, context):
-    # `event` and `context` are passed by AWS Lambda. `event` contains trigger data.
-    print(f"Lambda Event: {event}") # Log the event (e.g., from EventBridge)
+    print(f"Lambda Event: {event}")
     
-    # Initialize clients and models if this is a cold start or they haven't been set
-    # This helps reuse connections/loaded models across invocations if the container is warm
+    # --- Initialize Globals ---
     try:
         initialize_globals()
     except Exception as e_init:
         print(f"CRITICAL: Failed to initialize globals: {e_init}")
-        # Depending on the error, you might want to return an error status
         return {'statusCode': 500, 'body': f"Initialization failed: {str(e_init)}"}
 
-    print(f"\n--- Running Bot Cycle via Lambda: {datetime.now(tz=pytz.timezone('America/New_York'))} NY ---") # Log with timezone
-    
-    # 1. Determine Data Fetch Limit
-    # Ensure N_HISTORICAL_BARS_FOR_HMM is sufficient for all HMM feature lookbacks
-    # Ensure MIN_BARS_FOR_STRAT_TA is sufficient for all strategy TA lookbacks
+    now_ny = datetime.now(tz=pytz.timezone('America/New_York'))
+    print(f"\n--- Running Bot Cycle: {now_ny.strftime('%Y-%m-%d %H:%M:%S %Z')} ---")
+
+    # --- Determine How Much Data to Fetch ---
     data_fetch_limit = max(N_HISTORICAL_BARS_FOR_HMM, MIN_BARS_FOR_STRAT_TA)
-    print(f"Determined data fetch limit: {data_fetch_limit} bars (plus buffer).")
-    
-    # Fetch slightly more for TA stability at the edges
-    market_data_df_full = get_latest_market_data_lambda(market_data_client, SYMBOL, ALPACA_TIMEFRAME, data_fetch_limit + 40)
+    print(f"Data Fetch Limit: {data_fetch_limit} bars + buffer")
 
-    if market_data_df_full.empty or len(market_data_df_full) < data_fetch_limit:
-        message = f"Insufficient market data ({len(market_data_df_full)} fetched, need at least {data_fetch_limit}). Skipping."
-        print(message)
-        return {'statusCode': 200, 'body': message} # Graceful exit
+    df_full = get_latest_market_data_lambda(SYMBOL, ALPACA_TIMEFRAME, data_fetch_limit + 40)
+    if df_full.empty or len(df_full) < data_fetch_limit:
+        msg = f"Insufficient market data ({len(df_full)} bars). Skipping."
+        print(msg)
+        return {'statusCode': 200, 'body': msg}
 
-    # 2. Calculate HMM Features
-    # Pass the slice of data that HMM feature calculation expects
-    if len(market_data_df_full) < N_HISTORICAL_BARS_FOR_HMM:
-        message = f"Not enough data in market_data_df_full ({len(market_data_df_full)}) for HMM features ({N_HISTORICAL_BARS_FOR_HMM})."
-        print(message)
-        return {'statusCode': 200, 'body': message}
-    hmm_input_data_slice = market_data_df_full.iloc[-N_HISTORICAL_BARS_FOR_HMM:].copy()
-    features_for_hmm_prediction = calculate_hmm_features_lambda(hmm_input_data_slice, FEATURES)
+    # --- HMM Features ---
+    hmm_df_slice = df_full.iloc[-N_HISTORICAL_BARS_FOR_HMM:]
+    hmm_features = calculate_hmm_features_lambda(hmm_df_slice, FEATURES)
 
-    if features_for_hmm_prediction.empty:
-        message = "Could not calculate HMM features. Skipping."
-        print(message)
-        return {'statusCode': 200, 'body': message}
+    if hmm_features.empty:
+        msg = "HMM features missing or contain NaNs. Skipping."
+        print(msg)
+        return {'statusCode': 200, 'body': msg}
 
-    # 3. Predict HMM State
-    predicted_hmm_state = predict_hmm_state_lambda(scaler_global, hmm_model_global, features_for_hmm_prediction)
-    if predicted_hmm_state is None:
-        message = "Could not predict HMM state. Skipping."
-        print(message)
-        return {'statusCode': 200, 'body': message}
-    
-    print(f"Predicted HMM State: {predicted_hmm_state}")
+    # --- Predict State ---
+    hmm_state = predict_hmm_state_lambda(scaler_global, hmm_model_global, hmm_features)
+    if hmm_state is None:
+        msg = "HMM prediction failed. Skipping."
+        print(msg)
+        return {'statusCode': 200, 'body': msg}
 
-    # 4. Calculate Strategy-Specific Technical Indicators from the full fetched data
-    df_for_strat_ta = market_data_df_full.copy()
-    # Ensure columns exist before calculating TA
-    required_cols_for_ta = ['High', 'Low', 'Close']
-    if not all(col in df_for_strat_ta.columns for col in required_cols_for_ta):
-        message = f"Missing required columns for TA ({required_cols_for_ta}) in fetched data. Columns: {df_for_strat_ta.columns}"
-        print(message)
-        return {'statusCode': 200, 'body': message}
+    print(f"Predicted HMM State: {hmm_state}")
 
+    # --- Technical Indicators for Strategy ---
+    required_cols = ['High', 'Low', 'Close']
+    if not all(col in df_full.columns for col in required_cols):
+        msg = f"Missing required TA columns. Available: {df_full.columns.tolist()}"
+        print(msg)
+        return {'statusCode': 200, 'body': msg}
 
-    current_atr_value = ta.atr(df_for_strat_ta['High'], df_for_strat_ta['Low'], df_for_strat_ta['Close'], length=LOOKBACK_ATR_STRAT).iloc[-1]
-    current_rsi_strat_value = ta.rsi(df_for_strat_ta['Close'], length=LOOKBACK_RSI_STRAT).iloc[-1]
-    
-    df_for_strat_ta['Returns_strat_calc'] = df_for_strat_ta['Close'].pct_change()
-    current_volatility_strat_value = df_for_strat_ta['Returns_strat_calc'].rolling(window=LOOKBACK_VOL_STRAT).std().iloc[-1]
+    current_atr = ta.atr(df_full['High'], df_full['Low'], df_full['Close'], length=LOOKBACK_ATR_STRAT).iloc[-1]
+    current_rsi = ta.rsi(df_full['Close'], length=LOOKBACK_RSI_STRAT).iloc[-1]
+    df_full['Returns'] = df_full['Close'].pct_change()
+    current_vol = df_full['Returns'].rolling(window=LOOKBACK_VOL_STRAT).std().iloc[-1]
 
-    print(f"Strategy Indicators for latest bar: ATR={current_atr_value:.2f}, RSI={current_rsi_strat_value:.2f}, Volatility={current_volatility_strat_value:.4f}")
+    print(f"TA Indicators: RSI={current_rsi:.2f}, ATR={current_atr:.2f}, Vol={current_vol:.4f}")
 
-    # 5. Execute Strategy if Market is Open
-    is_market_open = False
+    # --- Check Market Open ---
     try:
-        is_market_open = trading_client.get_clock().is_open
-    except Exception as e_clock:
-        print(f"Error getting market clock: {e_clock}. Assuming market is closed for safety.")
-        
-    if not is_market_open:
-        message = f"Market is currently closed. Predicted HMM state {predicted_hmm_state}, but no trading actions taken."
-        print(message)
-    else:
-        print("Market is open. Proceeding with trade strategy execution.")
-        execute_trade_strategy_lambda(
-            trading_client, predicted_hmm_state, SYMBOL,
-            current_rsi_strat_value, current_atr_value, current_volatility_strat_value,
-            TRADING_RULES_HMM
-        )
-        message = f"Trade strategy executed for state {predicted_hmm_state}."
-    
-    final_message = f"--- Lambda Bot Cycle Complete. {message} ---"
+        clock = trading_client.get_clock()
+        if not clock.is_open:
+            msg = f"Market is closed. No trades executed. State: {hmm_state}"
+            print(msg)
+            return {'statusCode': 200, 'body': msg}
+    except Exception as e:
+        print(f"Failed to fetch market clock: {e}")
+        return {'statusCode': 200, 'body': "Clock error. Market open status unknown. Skipping."}
+
+    # --- Execute Strategy ---
+    print("Market is open. Executing strategy...")
+    execute_trade_strategy_lambda(
+        trading_client,
+        hmm_state,
+        SYMBOL,
+        current_rsi,
+        current_atr,
+        current_vol,
+        TRADING_RULES_HMM
+    )
+
+    final_message = f"Trade cycle complete. HMM State: {hmm_state}"
     print(final_message)
     return {'statusCode': 200, 'body': final_message}
-
-# For local testing (optional, ensure .env is set up and files are in path)
-# if __name__ == "__main__":
-#     # Need to mock AWS context or ensure local env vars are set
-#     # Python-dotenv should handle .env file for local testing if present
-#     if not all([API_KEY, API_SECRET, BASE_URL]):
-#         print("API Keys or Base URL not found in environment variables. Exiting local test.")
-#     else:
-#         print("

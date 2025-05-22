@@ -6,11 +6,14 @@ import pandas_ta as ta # Or your TA library
 import time
 from datetime import datetime, timedelta
 import os # For API keys
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
 # --- CONFIGURATION ---
 API_KEY = os.environ.get('APCA_API_KEY_ID') # Best practice: use environment variables
 API_SECRET = os.environ.get('APCA_API_SECRET_KEY')
-BASE_URL = 'https.YOUR_APCA_PAPER_URL' # e.g., 'https://paper-api.alpaca.markets'
+BASE_URL = 'https://paper-api.alpaca.markets' # e.g., 'https://paper-api.alpaca.markets'
 # For live trading, change to 'https://api.alpaca.markets'
 
 SYMBOL = 'SPY' # Or whatever S&P 500 ETF/futures you're trading
@@ -266,32 +269,32 @@ def run_bot():
 # --- Main Loop / Scheduler ---
 if __name__ == "__main__":
     # For a simple test, run once:
-    # run_bot() 
+    run_bot() 
 
     # For continuous operation:
     # Use a scheduler like 'schedule' or APScheduler
-    # Example with 'schedule' library (pip install schedule)
-    import schedule
+    # # Example with 'schedule' library (pip install schedule)
+    # import schedule
     
-    if BAR_TIMEFRAME == '1Day':
-        # Example: Run once a day after market open (adjust time as needed)
-        # Ensure your data fetching gets data *up to yesterday's close* if trading at today's open
-        schedule.every().day.at("09:35", "America/New_York").do(run_bot) # Example: 5 mins after open
-        print("Scheduled daily run at 09:35 New York time.")
-    elif 'Min' in BAR_TIMEFRAME or 'Hour' in BAR_TIMEFRAME:
-        interval = int(BAR_TIMEFRAME.replace('Min','').replace('Hour',''))
-        if 'Min' in BAR_TIMEFRAME:
-            schedule.every(interval).minutes.do(run_bot)
-            print(f"Scheduled run every {interval} minutes.")
-        elif 'Hour' in BAR_TIMEFRAME:
-            schedule.every(interval).hours.do(run_bot)
-            print(f"Scheduled run every {interval} hours.")
-    else:
-        print(f"Unsupported BAR_TIMEFRAME for scheduling: {BAR_TIMEFRAME}. Running once for test.")
-        run_bot()
-        exit()
+    # if BAR_TIMEFRAME == '1Day':
+    #     # Example: Run once a day after market open (adjust time as needed)
+    #     # Ensure your data fetching gets data *up to yesterday's close* if trading at today's open
+    #     schedule.every().day.at("09:35", "America/New_York").do(run_bot) # Example: 5 mins after open
+    #     print("Scheduled daily run at 09:35 New York time.")
+    # elif 'Min' in BAR_TIMEFRAME or 'Hour' in BAR_TIMEFRAME:
+    #     interval = int(BAR_TIMEFRAME.replace('Min','').replace('Hour',''))
+    #     if 'Min' in BAR_TIMEFRAME:
+    #         schedule.every(interval).minutes.do(run_bot)
+    #         print(f"Scheduled run every {interval} minutes.")
+    #     elif 'Hour' in BAR_TIMEFRAME:
+    #         schedule.every(interval).hours.do(run_bot)
+    #         print(f"Scheduled run every {interval} hours.")
+    # else:
+    #     print(f"Unsupported BAR_TIMEFRAME for scheduling: {BAR_TIMEFRAME}. Running once for test.")
+    #     run_bot()
+    #     exit()
 
-    print(f"Bot started. Waiting for scheduled runs... Press Ctrl+C to exit.")
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    # print(f"Bot started. Waiting for scheduled runs... Press Ctrl+C to exit.")
+    # while True:
+    #     schedule.run_pending()
+    #     time.sleep(1)

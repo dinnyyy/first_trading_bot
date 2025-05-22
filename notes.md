@@ -4,9 +4,9 @@
 - Bybit or binance for crypto
 - Alpaca for stocks
 - is hmm good for a trading bot? if not what alternatives. How can i expand on this model
-- How to deploy bot, what do you need
-- Jim Simons
-
+- Trade forex currency pairs
+    allows to use symmetric rules for long a short trades
+- dont start model speculation with indicators
 - use droplet on digital ocean for Linux vps (https://cloud.digitalocean.com/droplets?i=588327)
 
 Basic Model to begin with:
@@ -20,6 +20,7 @@ Basic Model to begin with:
 - MACD signal
 - Volatility (rolling std or GARCH estimate)
 - Volume (optional)
+- Stochastic oscilator
 
 3. Hidden Markov Model
 - Use a GaussianHMM (e.g., 2 or 3 hidden states).
@@ -68,3 +69,5 @@ Youtube
  - Algo Trading with Kevin Davey (channel) -> https://www.youtube.com/watch?v=pK1ukXMeDcw
  - Darwinex Algo Trading for a Living (playlist) -> https://www.youtube.com/watch?v=RqVqbqYyHpI&list=PLv-cA-4O3y96b0gk8x3yPbqVM2gqafZAw
  
+People
+- Jim Simons

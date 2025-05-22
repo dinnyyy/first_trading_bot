@@ -7,7 +7,7 @@ from numpy._core._multiarray_umath import (
     __cpu_dispatch__,
 )
 
-__all__ = ["show_config"]
+__all__ = ["show"]
 _built_with_meson = True
 
 
@@ -31,26 +31,26 @@ CONFIG = _cleanup(
     {
         "Compilers": {
             "c": {
-                "name": "msvc",
-                "linker": r"link",
-                "version": "19.29.30159",
-                "commands": r"cl",
+                "name": "gcc",
+                "linker": r"ld.bfd",
+                "version": "10.2.1",
+                "commands": r"cc",
                 "args": r"",
                 "linker args": r"",
             },
             "cython": {
                 "name": "cython",
                 "linker": r"cython",
-                "version": "3.1.0",
+                "version": "3.0.11",
                 "commands": r"cython",
                 "args": r"",
                 "linker args": r"",
             },
             "c++": {
-                "name": "msvc",
-                "linker": r"link",
-                "version": "19.29.30159",
-                "commands": r"cl",
+                "name": "gcc",
+                "linker": r"ld.bfd",
+                "version": "10.2.1",
+                "commands": r"c++",
                 "args": r"",
                 "linker args": r"",
             },
@@ -60,13 +60,13 @@ CONFIG = _cleanup(
                 "cpu": "x86_64",
                 "family": "x86_64",
                 "endian": "little",
-                "system": "windows",
+                "system": "linux",
             },
             "build": {
                 "cpu": "x86_64",
                 "family": "x86_64",
                 "endian": "little",
-                "system": "windows",
+                "system": "linux",
             },
             "cross-compiled": bool("False".lower().replace("false", "")),
         },
@@ -74,27 +74,27 @@ CONFIG = _cleanup(
             "blas": {
                 "name": "scipy-openblas",
                 "found": bool("True".lower().replace("false", "")),
-                "version": "0.3.29",
+                "version": "0.3.27",
                 "detection method": "pkgconfig",
-                "include directory": r"C:/Users/runneradmin/AppData/Local/Temp/cibw-run-gnu2g9dg/cp313-win_amd64/build/venv/Lib/site-packages/scipy_openblas64/include",
-                "lib directory": r"C:/Users/runneradmin/AppData/Local/Temp/cibw-run-gnu2g9dg/cp313-win_amd64/build/venv/Lib/site-packages/scipy_openblas64/lib",
-                "openblas configuration": r"OpenBLAS 0.3.29  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=24",
-                "pc file directory": r"C:/a/numpy/numpy/.openblas",
+                "include directory": r"/opt/_internal/cpython-3.9.18/lib/python3.9/site-packages/scipy_openblas64/include",
+                "lib directory": r"/opt/_internal/cpython-3.9.18/lib/python3.9/site-packages/scipy_openblas64/lib",
+                "openblas configuration": r"OpenBLAS 0.3.27  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Zen MAX_THREADS=64",
+                "pc file directory": r"/project/.openblas",
             },
             "lapack": {
                 "name": "scipy-openblas",
                 "found": bool("True".lower().replace("false", "")),
-                "version": "0.3.29",
+                "version": "0.3.27",
                 "detection method": "pkgconfig",
-                "include directory": r"C:/Users/runneradmin/AppData/Local/Temp/cibw-run-gnu2g9dg/cp313-win_amd64/build/venv/Lib/site-packages/scipy_openblas64/include",
-                "lib directory": r"C:/Users/runneradmin/AppData/Local/Temp/cibw-run-gnu2g9dg/cp313-win_amd64/build/venv/Lib/site-packages/scipy_openblas64/lib",
-                "openblas configuration": r"OpenBLAS 0.3.29  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=24",
-                "pc file directory": r"C:/a/numpy/numpy/.openblas",
+                "include directory": r"/opt/_internal/cpython-3.9.18/lib/python3.9/site-packages/scipy_openblas64/include",
+                "lib directory": r"/opt/_internal/cpython-3.9.18/lib/python3.9/site-packages/scipy_openblas64/lib",
+                "openblas configuration": r"OpenBLAS 0.3.27  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Zen MAX_THREADS=64",
+                "pc file directory": r"/project/.openblas",
             },
         },
         "Python Information": {
-            "path": r"C:\Users\runneradmin\AppData\Local\Temp\build-env-iv6bfc05\Scripts\python.exe",
-            "version": "3.13",
+            "path": r"/tmp/build-env-qcve7dge/bin/python",
+            "version": "3.9",
         },
         "SIMD Extensions": {
             "baseline": __cpu_baseline__,
@@ -160,11 +160,3 @@ def show(mode=DisplayModes.stdout.value):
         raise AttributeError(
             f"Invalid `mode`, use one of: {', '.join([e.value for e in DisplayModes])}"
         )
-
-
-def show_config(mode=DisplayModes.stdout.value):
-    return show(mode)
-
-
-show_config.__doc__ = show.__doc__
-show_config.__module__ = "numpy"
