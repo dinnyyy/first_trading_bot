@@ -209,9 +209,8 @@ def get_current_price_and_account_equity_lambda(trade_client, symbol):
 
 
 def execute_trade_strategy_lambda(trade_client, hmm_state, symbol, 
-                                  rsi_val, atr_val, vol_val,
-                                  hmm_rules):
-
+                                rsi_val, atr_val, vol_val,
+                                hmm_rules):
     print(f"\n--- Executing Trade Strategy for HMM State: {hmm_state} ---")
 
     action = hmm_rules.get(hmm_state, 'Hold')
@@ -224,6 +223,14 @@ def execute_trade_strategy_lambda(trade_client, hmm_state, symbol,
     if any(pd.isna(v) for v in [rsi_val, atr_val, vol_val]):
         print(f"NaN values in indicators. RSI={rsi_val}, ATR={atr_val}, Vol={vol_val}")
         return
+
+    # Check if there is an open position (skip if one exists)
+    try:
+        open_position = trade_client.get_open_position(symbol)
+        print(f"Open position detected: {open_position.qty_available} shares. Skipping new trade.")
+        return  # Exit function if position exists
+    except Exception:
+        print("No open position. Proceeding with trade checks...")
 
     price, equity = get_current_price_and_account_equity_lambda(trade_client, symbol)
     if price is None or equity is None:
@@ -250,15 +257,6 @@ def execute_trade_strategy_lambda(trade_client, hmm_state, symbol,
         print(f"Volatility too high. Vol={vol_val:.4f}, 2*ATR={2 * atr_val:.4f}")
         return
 
-    # Check if there is an open position
-    open_position = None
-    try:
-        open_position = trade_client.get_open_position(symbol)
-        qty = float(open_position.qty_available)
-        print(f"Open position detected: {qty} shares")
-    except Exception:
-        print("No open position.")
-
     # Define order parameters
     side = OrderSide.BUY if action == 'Buy' else OrderSide.SELL
     
@@ -270,16 +268,6 @@ def execute_trade_strategy_lambda(trade_client, hmm_state, symbol,
         stop_price = round(price + stop_loss_dist, 2)
         limit_price = round(price - take_profit_dist, 2)
     
-    # Flatten existing position (if needed)
-    if open_position:
-        try:
-            print("Closing existing position...")
-            trade_client.close_position(symbol)
-            time.sleep(1)
-        except Exception as e:
-            print(f"Failed to close existing position: {e}")
-            return
-
     # Submit order with bracket parameters
     try:
         order_req = MarketOrderRequest(
